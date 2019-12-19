@@ -50,7 +50,7 @@ def topk_meter(ctx: Context, train_ctx: Context, k: int = 1) -> float:
 
         correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
         return correct_k.mul_(100.0 / batch_size)
-    
+
     if not 'meter' in ctx:
         ctx.meter = AverageMeter()
 

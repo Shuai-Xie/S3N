@@ -22,21 +22,21 @@ class TqdmHandler(logging.StreamHandler):
 
 @register
 def network_trainer(
-    data_loaders: Tuple[List[Tuple[str, data.DataLoader]], List[Tuple[str, data.DataLoader]]],
-    model: nn.Module,
-    criterion: object,
-    optimizer: Callable[[Iterable], optim.Optimizer],
-    parameter: Optional[Callable] = None,
-    meters: Optional[Dict[str, Callable[[Context], Any]]] = None,
-    hooks: Optional[Dict[str, List[Callable[[Context], None]]]] = None,
-    max_epoch: int = 200,
-    test_interval: int = 1,
-    resume: Optional[str] = None,
-    log_path: Optional[str] = None,
-    device: str = 'cuda',
-    use_data_parallel: bool = True,
-    use_cudnn_benchmark: bool = True,
-    random_seed: int = 999) -> Context:
+        data_loaders: Tuple[List[Tuple[str, data.DataLoader]], List[Tuple[str, data.DataLoader]]],
+        model: nn.Module,
+        criterion: object,
+        optimizer: Callable[[Iterable], optim.Optimizer],
+        parameter: Optional[Callable] = None,
+        meters: Optional[Dict[str, Callable[[Context], Any]]] = None,
+        hooks: Optional[Dict[str, List[Callable[[Context], None]]]] = None,
+        max_epoch: int = 200,
+        test_interval: int = 1,
+        resume: Optional[str] = None,
+        log_path: Optional[str] = None,
+        device: str = 'cuda',
+        use_data_parallel: bool = True,
+        use_cudnn_benchmark: bool = True,
+        random_seed: int = 999) -> Context:
     """Network trainer.
     """
 
@@ -49,9 +49,9 @@ def network_trainer(
     screen_handler = TqdmHandler()
     screen_handler.setFormatter(logging.Formatter('[%(asctime)s] %(message)s'))
     logger.addHandler(screen_handler)
-    
+
     if not log_path is None:
-        
+
         try:
             os.makedirs(os.path.dirname(log_path))
         except OSError as exception:
@@ -60,22 +60,23 @@ def network_trainer(
         file_handler = logging.FileHandler(log_path, encoding='utf8')
         file_handler.setFormatter(logging.Formatter('[%(asctime)s][%(levelname)s] %(message)s'))
         logger.addHandler(file_handler)
-    
+
     def run_in_notebook():
         try:
             return get_ipython().__class__.__name__.startswith('ZMQ')
         except NameError:
             pass
         return False
+
     progress_bar = tqdm_notebook if run_in_notebook() else tqdm
-    
+
     device = torch.device(device)
     if device.type == 'cuda':
         assert torch.cuda.is_available(), 'CUDA is not available.'
         torch.backends.cudnn.benchmark = use_cudnn_benchmark
 
     train_loaders, test_loaders = data_loaders
-    
+
     model = model.to(device)
 
     if device.type == 'cuda' and use_data_parallel:
@@ -96,22 +97,24 @@ def network_trainer(
         logger.info('checkpoint loaded (epoch %d)' % start_epoch_idx)
 
     ctx = Context(
-        split = 'train',
-        is_train = True,
-        model = model,
-        optimizer = optimizer,
-        max_epoch = max_epoch,
-        epoch_idx = start_epoch_idx,
-        batch_idx = start_batch_idx,
-        input = Tensor(),
-        output = Tensor(),
-        target = Tensor(),
-        loss = Tensor(),
-        metrics = dict(),
-        state_dicts = [],
-        logger = logger)
+        split='train',
+        is_train=True,
+        model=model,
+        optimizer=optimizer,
+        max_epoch=max_epoch,
+        epoch_idx=start_epoch_idx,
+        batch_idx=start_batch_idx,
+        input=Tensor(),
+        output=Tensor(),
+        target=Tensor(),
+        loss=Tensor(),
+        metrics=dict(),
+        state_dicts=[],
+        logger=logger)
 
-    class Skip(Exception): pass
+    class Skip(Exception):
+        pass
+
     ctx.Skip = Skip
 
     @contextmanager
@@ -140,7 +143,7 @@ def network_trainer(
         run_hooks('on_start_split')
 
         if is_train:
-            model.train() 
+            model.train()
         else:
             model.eval()
 
@@ -190,7 +193,7 @@ def network_trainer(
         if epoch_idx % test_interval == 0:
             for split, loader in test_loaders:
                 process(split, loader, False)
-        
+
         run_hooks('on_end_epoch')
 
     run_hooks('on_end')

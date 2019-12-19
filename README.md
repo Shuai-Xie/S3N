@@ -25,9 +25,10 @@ Please follow the instruction below to install it and run the experiment demo.
     ```bash
     # note that data will be saved under your current path
     $ git clone https://github.com/Yao-DD/S3N.git ./S3N
+    # install *.py on ./S3N/ path to s3n namespace
     $ nest module install ./S3N/ s3n
     # verify the installation
-    $ nest module list --filter s3n
+    $ nest module list --filter s3n  # list modules on s3n namespace
     ```
 
 ### Prepare Data

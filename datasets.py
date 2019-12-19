@@ -12,10 +12,10 @@ from nest import register
 
 @register
 def image_transform(
-    image_size: Union[int, List[int]],
-    augmentation: dict,
-    mean: List[float] = [0.485, 0.456, 0.406],
-    std: List[float] = [0.229, 0.224, 0.225]) -> Callable:
+        image_size: Union[int, List[int]],
+        augmentation: dict,
+        mean: List[float] = [0.485, 0.456, 0.406],
+        std: List[float] = [0.229, 0.224, 0.225]) -> Callable:
     """Image transforms.
     """
 
@@ -42,7 +42,7 @@ def image_transform(
 
     if len(augmentation) > 0:
         raise NotImplementedError('Invalid augmentation options: %s.' % ', '.join(augmentation.keys()))
-    
+
     t = [
         transforms.Resize(image_size) if random_crop is None else transforms.RandomResizedCrop(image_size[0], **random_crop),
         transforms.CenterCrop(center_crop) if center_crop is not None else None,
@@ -50,27 +50,27 @@ def image_transform(
         transforms.RandomVerticalFlip(vertical_flip) if vertical_flip is not None else None,
         transforms.ToTensor(),
         transforms.Normalize(mean, std)]
-    
+
     return transforms.Compose([v for v in t if v is not None])
 
 
 @register
 def fetch_data(
-    dataset: Callable[[str], Dataset],
-    transform: Optional[Callable] = None,
-    target_transform: Optional[Callable] = None,
-    num_workers: int = 0,
-    pin_memory: bool = True,
-    drop_last: bool = False,
-    train_splits: List[str] = [],
-    test_splits: List[str] = [],
-    train_shuffle: bool = True,
-    test_shuffle: bool = False,
-    test_image_size: int = 600, 
-    train_augmentation: dict = {},
-    test_augmentation: dict = {},
-    batch_size: int = 1,
-    test_batch_size: Optional[int] = None) -> Tuple[List[Tuple[str, DataLoader]], List[Tuple[str, DataLoader]]]:
+        dataset: Callable[[str], Dataset],
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None,
+        num_workers: int = 0,
+        pin_memory: bool = True,
+        drop_last: bool = False,
+        train_splits: List[str] = [],
+        test_splits: List[str] = [],
+        train_shuffle: bool = True,
+        test_shuffle: bool = False,
+        test_image_size: int = 600,
+        train_augmentation: dict = {},
+        test_augmentation: dict = {},
+        batch_size: int = 1,
+        test_batch_size: Optional[int] = None) -> Tuple[List[Tuple[str, DataLoader]], List[Tuple[str, DataLoader]]]:
     """Fetch data.
     """
 
@@ -78,28 +78,28 @@ def fetch_data(
     train_loader_list = []
     for split in train_splits:
         train_loader_list.append((split, DataLoader(
-            dataset = dataset(
-                split = split, 
-                transform = train_transform,
-                target_transform = target_transform),
-            batch_size = batch_size,
-            num_workers = num_workers,
-            pin_memory = pin_memory,
+            dataset=dataset(
+                split=split,
+                transform=train_transform,
+                target_transform=target_transform),
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
             drop_last=drop_last,
-            shuffle = train_shuffle)))
-    
+            shuffle=train_shuffle)))
+
     test_transform = transform(image_size=[test_image_size, test_image_size], augmentation=test_augmentation) if transform else None
     test_loader_list = []
     for split in test_splits:
         test_loader_list.append((split, DataLoader(
-            dataset = dataset(
-                split = split, 
-                transform = test_transform,
-                target_transform = target_transform),
-            batch_size = batch_size if test_batch_size is None else test_batch_size,
-            num_workers = num_workers,
-            pin_memory = pin_memory,
+            dataset=dataset(
+                split=split,
+                transform=test_transform,
+                target_transform=target_transform),
+            batch_size=batch_size if test_batch_size is None else test_batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
             drop_last=drop_last,
-            shuffle = test_shuffle)))
+            shuffle=test_shuffle)))
 
     return train_loader_list, test_loader_list
