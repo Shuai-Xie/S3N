@@ -71,35 +71,60 @@ def fetch_data(
         test_augmentation: dict = {},
         batch_size: int = 1,
         test_batch_size: Optional[int] = None) -> Tuple[List[Tuple[str, DataLoader]], List[Tuple[str, DataLoader]]]:
-    """Fetch data.
+    """
+    :param dataset: Callable, `fgvc_datasets.fgvc_dataset`
+            [str] data_dir: ./datasets/CUB_200_2011
+            Dataset: `fgvc_datasets.FGVC_Dataset`
+    :param transform: train transform
+    :param target_transform: label transform
+    :param num_workers:
+    :param pin_memory:
+    :param drop_last:
+    :param train_splits:
+    :param test_splits:
+    :param train_shuffle:
+    :param test_shuffle:
+    :param test_image_size:
+    :param train_augmentation:
+    :param test_augmentation:
+    :param batch_size:
+    :param test_batch_size:
+    :return:
+        train_loader_list, test_loader_list: [ ('train': DataLoader object) ,... ]
     """
 
     train_transform = transform(augmentation=train_augmentation) if transform else None
+    # train_transfrom use transform own image_size: [448, 448]
     train_loader_list = []
-    for split in train_splits:
-        train_loader_list.append((split, DataLoader(
-            dataset=dataset(
-                split=split,
-                transform=train_transform,
-                target_transform=target_transform),
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            drop_last=drop_last,
-            shuffle=train_shuffle)))
+    for split in train_splits:  # ['train']
+        train_loader_list.append(
+            (split, DataLoader(  # torch.dataloader
+                # dataset has set `data_dir` in yml
+                dataset=dataset(split=split,
+                                transform=train_transform,
+                                target_transform=target_transform),
+                batch_size=batch_size,  # 16
+                num_workers=num_workers,  # 4
+                pin_memory=pin_memory,  # True
+                drop_last=drop_last,  # False
+                shuffle=train_shuffle  # True
+            )))
 
-    test_transform = transform(image_size=[test_image_size, test_image_size], augmentation=test_augmentation) if transform else None
+    test_transform = transform(image_size=[test_image_size, test_image_size],
+                               augmentation=test_augmentation) if transform else None
     test_loader_list = []
-    for split in test_splits:
-        test_loader_list.append((split, DataLoader(
-            dataset=dataset(
-                split=split,
-                transform=test_transform,
-                target_transform=target_transform),
-            batch_size=batch_size if test_batch_size is None else test_batch_size,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            drop_last=drop_last,
-            shuffle=test_shuffle)))
+    for split in test_splits:  # ['test']
+        test_loader_list.append(
+            (split, DataLoader(
+                dataset=dataset(split=split,
+                                transform=test_transform,
+                                target_transform=target_transform),
+                batch_size=batch_size if test_batch_size is None else test_batch_size,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+                drop_last=drop_last,
+                # above use cfgs as train
+                shuffle=test_shuffle
+            )))
 
     return train_loader_list, test_loader_list

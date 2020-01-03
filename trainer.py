@@ -37,12 +37,29 @@ def network_trainer(
         use_data_parallel: bool = True,
         use_cudnn_benchmark: bool = True,
         random_seed: int = 999) -> Context:
-    """Network trainer.
+    """
+    :param data_loaders: (train_loader_list, test_loader_list)
+            datasets.fetch_data
+    :param model:
+    :param criterion:
+    :param optimizer:
+    :param parameter:
+    :param meters:
+    :param hooks:
+    :param max_epoch:
+    :param test_interval:
+    :param resume:
+    :param log_path:
+    :param device:
+    :param use_data_parallel:
+    :param use_cudnn_benchmark:
+    :param random_seed:
+    :return:
     """
 
     torch.manual_seed(random_seed)
 
-    logger = logging.getLogger('nest.network_trainer')
+    logger = logging.getLogger(name='nest.network_trainer')
     logger.handlers = []
     logger.setLevel(logging.DEBUG)
 
@@ -51,7 +68,6 @@ def network_trainer(
     logger.addHandler(screen_handler)
 
     if not log_path is None:
-
         try:
             os.makedirs(os.path.dirname(log_path))
         except OSError as exception:
@@ -70,24 +86,27 @@ def network_trainer(
 
     progress_bar = tqdm_notebook if run_in_notebook() else tqdm
 
-    device = torch.device(device)
+    device = torch.device(device)  # cuda
     if device.type == 'cuda':
         assert torch.cuda.is_available(), 'CUDA is not available.'
-        torch.backends.cudnn.benchmark = use_cudnn_benchmark
+        torch.backends.cudnn.benchmark = use_cudnn_benchmark  # True, if fixed input size
 
     train_loaders, test_loaders = data_loaders
+    # train_loader_list, test_loader_list: [ ('train': DataLoader object) ], ..
 
+    # s3n
     model = model.to(device)
-
     if device.type == 'cuda' and use_data_parallel:
         model = nn.DataParallel(model)
 
+    # optimizer
     params = model.parameters() if parameter is None else parameter(model)
     optimizer = optimizer(params)
 
     start_epoch_idx = 0
     start_batch_idx = 0
-    if not resume is None:
+
+    if resume is not None:
         logger.info('loading checkpoint "%s"' % resume)
         checkpoint = torch.load(resume)
         start_epoch_idx = checkpoint['epoch_idx']
@@ -110,7 +129,8 @@ def network_trainer(
         loss=Tensor(),
         metrics=dict(),
         state_dicts=[],
-        logger=logger)
+        logger=logger
+    )
 
     class Skip(Exception):
         pass

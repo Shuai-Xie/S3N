@@ -9,15 +9,15 @@ from nest import register
 
 @register
 def finetune(
-    model: nn.Module, 
-    base_lr: float, 
-    groups: Dict[str, float], 
-    ignore_the_rest: bool = False,
-    raw_query: bool = False) -> List[Dict[str, Union[float, Iterable]]]:
+        model: nn.Module,
+        base_lr: float,
+        groups: Dict[str, float],
+        ignore_the_rest: bool = False,
+        raw_query: bool = False) -> List[Dict[str, Union[float, Iterable]]]:
     """Fintune.
     """
 
-    parameters = [dict(params=[], names=[], query=query if raw_query else '*'+query+'*', lr=lr*base_lr) for query, lr in groups.items()]
+    parameters = [dict(params=[], names=[], query=query if raw_query else '*' + query + '*', lr=lr * base_lr) for query, lr in groups.items()]
     rest_parameters = dict(params=[], names=[], lr=base_lr)
     for k, v in model.named_parameters():
         matched = False
@@ -60,7 +60,7 @@ def rle_decode(rle: dict) -> np.ndarray:
     starts, lengths = [np.asarray(x, dtype=int) for x in (runs[0:][::2], runs[1:][::2])]
     starts -= 1
     ends = starts + lengths
-    img = np.zeros(shape[0]*shape[1], dtype=np.uint8)
+    img = np.zeros(shape[0] * shape[1], dtype=np.uint8)
     for lo, hi in zip(starts, ends):
         img[lo:hi] = 1
     return img.reshape(shape)

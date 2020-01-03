@@ -29,8 +29,8 @@ def smooth_loss(
         size_average: bool = True,
         ignore_index: int = -100,
         reduce: bool = True) -> Tensor:
-    '''Smooth loss.
-    '''
+    """Smooth loss.
+    """
 
     prob = F.log_softmax(input, dim=1)
     ymask = prob.data.new(prob.size()).zero_()

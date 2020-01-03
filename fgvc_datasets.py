@@ -2,10 +2,7 @@ import os
 from collections import OrderedDict
 from typing import List, Dict, Tuple, Callable, Optional, Union
 
-import torch
-import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from torchvision import datasets, transforms
 from PIL import Image
 from nest import register
 
@@ -23,7 +20,7 @@ class FGVC_Dataset(Dataset):
         self.image_lables = self._read_annotation(self.split)
 
     def _read_annotation(self, split):
-        class_lables = OrderedDict()
+        class_lables = OrderedDict()  # dict
         if self.lable_path is None:
             lable_path = os.path.join(self.data_dir, split + '.txt')
         else:
@@ -31,7 +28,7 @@ class FGVC_Dataset(Dataset):
         if os.path.exists(lable_path):
             with open(lable_path, 'r') as f:
                 for line in f:
-                    name, lable = line.split(' ')
+                    name, lable = line.split(' ')  # filename, class_id
                     class_lables[name] = int(lable)
         else:
             raise NotImplementedError(
@@ -45,7 +42,7 @@ class FGVC_Dataset(Dataset):
 
         if self.transform:
             img = self.transform(img)
-        if self.target_transform:
+        if self.target_transform:  # class_id, no need
             target = self.target_transform(target)
 
         return img, target

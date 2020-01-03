@@ -59,7 +59,9 @@ def _mean_filter(input):
     return threshold.contiguous().view(batch_size, num_channels, 1, 1)
 
 
-class PeakStimulation(Function):
+class PeakStimulation(Function):  # torch.autograd.Function
+    # self-defined func
+    # forward / backward
 
     @staticmethod
     def forward(ctx, input, return_aggregation, win_size, peak_filter):
@@ -110,7 +112,7 @@ class ScaleLayer(nn.Module):
 
     def __init__(self, init_value=1e-3):
         super().__init__()
-        self.scale = nn.Parameter(torch.FloatTensor([init_value]))
+        self.scale = nn.Parameter(torch.FloatTensor([init_value]))  # note: a learned scale
 
     def forward(self, input):
         return input * self.scale
@@ -119,28 +121,42 @@ class ScaleLayer(nn.Module):
 class S3N(nn.Module):
 
     def __init__(self, base_model, num_classes, task_input_size, base_ratio, radius, radius_inv):
+        """
+        :param base_model: resnet50
+        :param num_classes: 200
+        :param task_input_size: 448
+        :param base_ratio: 0.09
+        :param radius: 0.09
+        :param radius_inv: 0.3
+        """
         super(S3N, self).__init__()
 
         self.grid_size = 31
         self.padding_size = 30
-        self.global_size = self.grid_size + 2 * self.padding_size
+        self.global_size = self.grid_size + 2 * self.padding_size  # 91
         self.input_size_net = task_input_size
         gaussian_weights = torch.FloatTensor(makeGaussian(2 * self.padding_size + 1, fwhm=13))
         self.base_ratio = base_ratio
+        # 2 learned val
         self.radius = ScaleLayer(radius)
         self.radius_inv = ScaleLayer(radius_inv)
 
-        self.filter = nn.Conv2d(1, 1, kernel_size=(2 * self.padding_size + 1, 2 * self.padding_size + 1), bias=False)
+        # gaussian filter
+        self.filter = nn.Conv2d(1, 1,
+                                kernel_size=(2 * self.padding_size + 1, 2 * self.padding_size + 1), bias=False)
         self.filter.weight[0].data[:, :, :] = gaussian_weights
 
-        self.P_basis = torch.zeros(2, self.grid_size + 2 * self.padding_size, self.grid_size + 2 * self.padding_size)
-        for k in range(2):
+        self.P_basis = torch.zeros(2, self.global_size, self.global_size)  # 2,91,91
+        for k in range(2):  # 2 channels
             for i in range(self.global_size):
                 for j in range(self.global_size):
-                    self.P_basis[k, i, j] = k * (i - self.padding_size) / (self.grid_size - 1.0) + (1.0 - k) * (j - self.padding_size) / (self.grid_size - 1.0)
+                    # k=0, j work, [i, 0] = -1; [i, 90] = 2
+                    # k=1, i work, [0, j] = -1; [90, j] = 2
+                    self.P_basis[k, i, j] = k * (i - self.padding_size) / (self.grid_size - 1.0) + \
+                                            (1.0 - k) * (j - self.padding_size) / (self.grid_size - 1.0)
 
-        self.features = base_model.features
-        self.num_features = base_model.num_features
+        self.features = base_model.features  # conv5_x
+        self.num_features = base_model.num_features  # 2048
 
         self.raw_classifier = nn.Linear(2048, num_classes)
         self.sampler_buffer = nn.Sequential(nn.Conv2d(2048, 2048, kernel_size=3, stride=2, padding=1, bias=False),
@@ -155,8 +171,8 @@ class S3N(nn.Module):
                                              )
         self.sampler_classifier1 = nn.Linear(2048, num_classes)
 
+        # concat features and classify
         self.con_classifier = nn.Linear(int(self.num_features * 3), num_classes)
-
         self.avg = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
 
@@ -164,9 +180,10 @@ class S3N(nn.Module):
 
     def create_grid(self, x):
         P = torch.autograd.Variable(torch.zeros(1, 2, self.grid_size + 2 * self.padding_size, self.grid_size + 2 * self.padding_size).cuda(),
-                                    requires_grad=False)
-        P[0, :, :, :] = self.P_basis
-        P = P.expand(x.size(0), 2, self.grid_size + 2 * self.padding_size, self.grid_size + 2 * self.padding_size)
+                                    requires_grad=False)  # BCHW
+        P[0, :, :, :] = self.P_basis  # init with basis, k=0,1
+
+        P = P.expand(x.size(0), 2, self.global_size, self.global_size)
 
         x_cat = torch.cat((x, x), 1)
         p_filter = self.filter(x)
@@ -197,26 +214,38 @@ class S3N(nn.Module):
         return grid
 
     def generate_map(self, input_x, class_response_maps, p):
-        N, C, H, W = class_response_maps.size()
+        N, C, H, W = class_response_maps.size()  # N, 200
 
-        score_pred, sort_number = torch.sort(F.softmax(F.adaptive_avg_pool2d(class_response_maps, 1), dim=1), dim=1, descending=True)
-        gate_score = (score_pred[:, 0:5] * torch.log(score_pred[:, 0:5])).sum(1)
+        # descend score of 200 class
+        # top_score, top_class
+        score_pred, sort_number = torch.sort(
+            F.softmax(F.adaptive_avg_pool2d(class_response_maps, 1), dim=1),  # prob of each class
+            dim=1,
+            descending=True
+        )
+
+        # estimate sparse attention
+        # H: top5 entropy sum
+        gate_score = (score_pred[:, 0:5] * torch.log(score_pred[:, 0:5])).sum(1)  # -
 
         xs = []
         xs_inv = []
 
-        for idx_i in range(N):
-            if gate_score[idx_i] > -0.2:
-                decide_map = class_response_maps[idx_i, sort_number[idx_i, 0], :, :]
-            else:
-                decide_map = class_response_maps[idx_i, sort_number[idx_i, 0:5], :, :].mean(0)
+        for idx_i in range(N):  # each img
+            # R: response map -> H,W
+            if gate_score[idx_i] > -0.2:  # thre, sum(top_5); [0.1, 0.3]
+                decide_map = class_response_maps[idx_i, sort_number[idx_i, 0], :, :]  # top1
+            else:  # not sum but mean
+                decide_map = class_response_maps[idx_i, sort_number[idx_i, 0:5], :, :].mean(0)  # top5
 
+            # normalize R
             min_value, max_value = decide_map.min(), decide_map.max()
             decide_map = (decide_map - min_value) / (max_value - min_value)
 
-            peak_list, aggregation = peak_stimulation(decide_map, win_size=3, peak_filter=_mean_filter)
-
-            decide_map = decide_map.squeeze(0).squeeze(0)
+            # peaks, local max
+            peak_list, aggregation = peak_stimulation(decide_map,
+                                                      win_size=3, peak_filter=_mean_filter)
+            decide_map = decide_map.squeeze(0).squeeze(0)  # 1,1,H,W
 
             score = [decide_map[item[2], item[3]] for item in peak_list]
             x = [item[3] for item in peak_list]
@@ -226,7 +255,8 @@ class S3N(nn.Module):
                 temp = torch.zeros(1, 1, self.grid_size, self.grid_size).cuda()
                 temp += self.base_ratio
                 xs.append(temp)
-                xs_soft.append(temp)
+                # xs_soft.append(temp)
+                xs_inv.append(temp)
                 continue
 
             peak_num = torch.arange(len(score))
@@ -276,32 +306,51 @@ class S3N(nn.Module):
         return x_sampled_zoom, x_sampled_inv
 
     def forward(self, input_x, p):
+        # 1. ori out
+        feature_raw = self.features(input_x)  # res50 conv5_x, 1/32, 14x14x2048
+        agg_origin = self.raw_classifier(self.avg(feature_raw).view(-1, 2048))  # 1,200
 
-        self.map_origin.weight.data.copy_(self.raw_classifier.weight.data.unsqueeze(-1).unsqueeze(-1))
+        # 2. zoom/inv image
+
+        # self.map_origin = nn.Conv2d(2048, num_classes, 1, 1, 0) # kernel=1, so can copy linear
+        # self.raw_classifier = nn.Linear(2048, num_classes)
+        # shared raw_classifier weights & bias
+        self.map_origin.weight.data.copy_(self.raw_classifier.weight.data.unsqueeze(-1).unsqueeze(-1))  # add 1x1 dim -> 1,1,2048,200
         self.map_origin.bias.data.copy_(self.raw_classifier.bias.data)
-
-        feature_raw = self.features(input_x)
-        agg_origin = self.raw_classifier(self.avg(feature_raw).view(-1, 2048))
+        # copy classifier weights to conv, then can do pixel-wise classify
 
         with torch.no_grad():
-            class_response_maps = F.interpolate(self.map_origin(feature_raw), size=self.grid_size, mode='bilinear', align_corners=True)
+            # self.map_origin(feature_raw)
+            # M_c = sum_D( W_dc x S_d )  features, d=2048
+            # 1x1 conv; conv 2048 channels with fc 2048-200 -> 200 channels, response on each class
+            # interpolate
+            class_response_maps = F.interpolate(self.map_origin(feature_raw),  # 14x14x200
+                                                size=self.grid_size,  # outsize, 31x31
+                                                mode='bilinear', align_corners=True)
+        # input_x is image
+        # resample two images, get zoom, inverse
         x_sampled_zoom, x_sampled_inv = self.generate_map(input_x, class_response_maps, p)
 
+        # 3. zoom/inv out
+
+        # sample feature
         feature_D = self.sampler_buffer(self.features(x_sampled_zoom))
         agg_sampler = self.sampler_classifier(self.avg(feature_D).view(-1, 2048))
 
         feature_C = self.sampler_buffer1(self.features(x_sampled_inv))
         agg_sampler1 = self.sampler_classifier1(self.avg(feature_C).view(-1, 2048))
 
+        # 4. aggregation
         aggregation = self.con_classifier(
-            torch.cat([self.avg(feature_raw).view(-1, 2048), self.avg(feature_D).view(-1, 2048), self.avg(feature_C).view(-1, 2048)], 1))
+            torch.cat([self.avg(feature_raw).view(-1, 2048),
+                       self.avg(feature_D).view(-1, 2048),
+                       self.avg(feature_C).view(-1, 2048)], 1))
 
         return aggregation, agg_origin, agg_sampler, agg_sampler1
 
 
 @register
-def s3n(
-        mode: str = 'resnet50',
+def s3n(mode: str = 'resnet50',
         num_classes: int = 200,
         task_input_size: int = 448,
         base_ratio: float = 0.09,
@@ -309,17 +358,19 @@ def s3n(
         radius_inv: float = 0.2) -> nn.Module:
     """ Selective sparse sampling.
     """
-
-    classify_network = modules.ft_resnet(mode=mode, fc_or_fcn='fc', num_classes=num_classes)
+    # nest.modules
+    # finetune resnet, return n_cls
+    classify_network = modules.ft_resnet(mode=mode,
+                                         fc_or_fcn='fc',
+                                         num_classes=num_classes)
     model = S3N(classify_network, num_classes, task_input_size, base_ratio, radius, radius_inv)
 
     return model
 
 
 @register
-def three_stage(
-        ctx: Context,
-        train_ctx: Context) -> None:
+def three_stage(ctx: Context,
+                train_ctx: Context) -> None:
     """Three stage.
     """
 

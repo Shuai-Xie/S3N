@@ -5,3 +5,5 @@
 .idea/*/*.xml
 
 ./datasets/CUB_200_2011
+./datasets/Cigar
+./generate
